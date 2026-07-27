@@ -14,6 +14,7 @@
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <maven.compiler.release>25</maven.compiler.release>
+    <jackson.version>2.18.2</jackson.version>
   </properties>
 
   <dependencyManagement>
@@ -29,6 +30,26 @@
   </dependencyManagement>
 
   <dependencies>
+    <!--
+      Jackson is optional: it backs the bundled JacksonJsonCodec (the default JsonCodec),
+      but is never forced onto consumers of this library. It stays on OUR compile/test
+      classpath, but Maven does not propagate it transitively (optional=true). A consuming
+      service either already has jackson-databind on its classpath (most do), or must add it
+      itself to use the typed JSON convenience methods, or supply its own JsonCodec.
+    -->
+    <dependency>
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <artifactId>jackson-databind</artifactId>
+      <version>${jackson.version}</version>
+      <optional>true</optional>
+    </dependency>
+    <dependency>
+      <groupId>com.fasterxml.jackson.datatype</groupId>
+      <artifactId>jackson-datatype-jsr310</artifactId>
+      <version>${jackson.version}</version>
+      <optional>true</optional>
+    </dependency>
+
     <dependency>
       <groupId>org.junit.jupiter</groupId>
       <artifactId>junit-jupiter-api</artifactId>
