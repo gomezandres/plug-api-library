@@ -83,4 +83,43 @@ class HttpLogSinkIntegrationTest {
 
         assertEquals(HttpLogLevel.DEBUG, events.get(0).level());
     }
+
+    @Test
+    void headersAndBodyAreOmittedByDefault() {
+        server = TestHttpServer.start((exchange) -> TestHttpServer.respond(exchange, 200, "{}"));
+        List<HttpLogEvent> events = new CopyOnWriteArrayList<>();
+        PlugHttpClient client = PlugHttpClient.builder()
+            .baseUri(server.baseUri())
+            .logSink(events::add)
+            .build();
+
+        client.post("/login").body("{\"password\":\"hunter2\"}").executeString();
+
+        assertEquals(null, events.get(0).requestHeaders());
+        assertEquals(null, events.get(0).requestBody());
+        assertEquals(null, events.get(0).responseHeaders());
+        assertEquals(null, events.get(0).responseBody());
+    }
+
+    @Test
+    void headersAndBodyAreRedactedWhenEnabled() {
+        server = TestHttpServer.start((exchange) -> TestHttpServer.respond(exchange, 200, "{\"token\":\"abc\"}"));
+        List<HttpLogEvent> events = new CopyOnWriteArrayList<>();
+        PlugHttpClient client = PlugHttpClient.builder()
+            .baseUri(server.baseUri())
+            .logSink(events::add)
+            .logHeaders(true)
+            .logBody(true)
+            .build();
+
+        client.post("/login")
+            .header("Authorization", "Bearer secret")
+            .body("{\"password\":\"hunter2\",\"name\":\"Andres\"}")
+            .executeString();
+
+        HttpLogEvent event = events.get(0);
+        assertEquals("***", event.requestHeaders().get("Authorization"));
+        assertEquals("{\"password\":\"***\",\"name\":\"Andres\"}", event.requestBody());
+        assertEquals("{\"token\":\"***\"}", event.responseBody());
+    }
 }
