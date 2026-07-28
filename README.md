@@ -171,11 +171,20 @@ Si no se configura ningún `logSink`, no se loguea nada (no-op) — es seguro po
 `HttpLogSink` que lanza una excepción nunca rompe el pedido HTTP real (se captura y se ignora):
 un bug en el logging no puede tirar abajo una llamada de producción.
 
+La librería también trae `StandardHttpLogFormat.logAsStandardJson(event)`, un `HttpLogSink` ya
+armado con el formato estándar de la empresa (envelope `level`/`thread`/`logger` + `message` con
+`type`/`id`/`address`-o-`responseCode`/`method`/`headers`/`payload`), impreso por `System.out`.
+Sirve para usar tal cual (`.logSink(StandardHttpLogFormat::logAsStandardJson)`) mientras no haya un
+encoder JSON propio configurado — para producción, confirmar con el dueño de la librería de
+logging corporativa cómo pasarle estos mismos campos a su encoder real.
+
 ## Correlation ID
 
-Por defecto se genera un `UUID` random y se manda en el header `X-Correlation-Id` (nombre y
-generador configurables vía `.correlationIdHeader(...)` / `.correlationIdSupplier(...)`). El
-mismo id se mantiene estable entre reintentos del mismo llamado lógico.
+Siempre se genera un `UUID` random (generador configurable vía `.correlationIdSupplier(...)`) que
+identifica el llamado lógico en los `HttpLogEvent` y se mantiene estable entre reintentos. Mandarlo
+como header en el request es opcional y está apagado por defecto — se activa con
+`.sendCorrelationIdHeader(true)`, y el nombre del header (`X-Correlation-Id` por defecto) se
+configura vía `.correlationIdHeader(...)`.
 
 ## Qué NO incluye (v1)
 

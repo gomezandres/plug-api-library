@@ -65,6 +65,7 @@ public final class PlugHttpClient {
     private final boolean logHeaders;
     private final boolean logBody;
     private final SensitiveDataMasker masker;
+    private final boolean sendCorrelationIdHeader;
     private final String correlationIdHeader;
     private final Supplier<String> correlationIdSupplier;
     private final Executor callbackExecutor;
@@ -81,6 +82,7 @@ public final class PlugHttpClient {
         this.logHeaders = builder.logHeaders;
         this.logBody = builder.logBody;
         this.masker = builder.masker;
+        this.sendCorrelationIdHeader = builder.sendCorrelationIdHeader;
         this.correlationIdHeader = builder.correlationIdHeader;
         this.correlationIdSupplier = builder.correlationIdSupplier;
         this.callbackExecutor = builder.executor;
@@ -236,7 +238,8 @@ public final class PlugHttpClient {
         defaultHeaders.forEach(requestBuilder::header);
         spec.headers().forEach(requestBuilder::header);
 
-        if (!hasHeaderIgnoreCase(spec.headers(), correlationIdHeader) && !hasHeaderIgnoreCase(defaultHeaders, correlationIdHeader)) {
+        if (sendCorrelationIdHeader && !hasHeaderIgnoreCase(spec.headers(), correlationIdHeader)
+            && !hasHeaderIgnoreCase(defaultHeaders, correlationIdHeader)) {
             requestBuilder.header(correlationIdHeader, correlationId);
         }
 
@@ -308,6 +311,7 @@ public final class PlugHttpClient {
         private boolean logHeaders = false;
         private boolean logBody = false;
         private SensitiveDataMasker masker = SensitiveDataMasker.defaultMasker();
+        private boolean sendCorrelationIdHeader = false;
         private String correlationIdHeader = "X-Correlation-Id";
         private Supplier<String> correlationIdSupplier = () -> UUID.randomUUID().toString();
         private Executor executor = Executors.newVirtualThreadPerTaskExecutor();
@@ -383,6 +387,14 @@ public final class PlugHttpClient {
             return this;
         }
 
+        /** Off by default. When on, the header named via {@link #correlationIdHeader} is added to every outgoing
+         * request (unless the caller already set one), carrying the id from {@link #correlationIdSupplier}. */
+        public Builder sendCorrelationIdHeader(boolean sendCorrelationIdHeader) {
+            this.sendCorrelationIdHeader = sendCorrelationIdHeader;
+            return this;
+        }
+
+        /** Header name used when {@link #sendCorrelationIdHeader} is on. Defaults to {@code X-Correlation-Id}. */
         public Builder correlationIdHeader(String correlationIdHeader) {
             this.correlationIdHeader = correlationIdHeader;
             return this;
