@@ -26,7 +26,7 @@ class HttpLogSinkIntegrationTest {
     }
 
     @Test
-    void oneEventIsEmittedPerAttemptWithStableCorrelationIdAndDefaultLevels() {
+    void twoEventsAreEmittedPerAttemptOutboundThenInboundWithStableCorrelationIdAndDefaultLevels() {
         AtomicInteger requestCount = new AtomicInteger();
         server = TestHttpServer.start((exchange) -> {
             int attempt = requestCount.incrementAndGet();
@@ -42,16 +42,23 @@ class HttpLogSinkIntegrationTest {
 
         client.get("/flaky").executeString();
 
-        assertEquals(2, events.size());
+        assertEquals(4, events.size());
         assertEquals("http.client.request", events.get(0).eventName());
+        assertEquals(HttpLogPhase.OUTBOUND, events.get(0).phase());
+        assertEquals(HttpLogPhase.INBOUND, events.get(1).phase());
+        assertEquals(HttpLogPhase.OUTBOUND, events.get(2).phase());
+        assertEquals(HttpLogPhase.INBOUND, events.get(3).phase());
         assertEquals(1, events.get(0).attempt());
-        assertEquals(2, events.get(1).attempt());
-        assertEquals(events.get(0).correlationId(), events.get(1).correlationId());
-        assertEquals(503, events.get(0).statusCode());
-        assertTrue(events.get(0).willRetry());
-        assertEquals(HttpLogLevel.WARN, events.get(0).level());
-        assertEquals(200, events.get(1).statusCode());
-        assertEquals(HttpLogLevel.INFO, events.get(1).level());
+        assertEquals(1, events.get(1).attempt());
+        assertEquals(2, events.get(2).attempt());
+        assertEquals(2, events.get(3).attempt());
+        assertEquals(events.get(0).correlationId(), events.get(3).correlationId());
+        assertEquals(HttpLogLevel.INFO, events.get(0).level());
+        assertEquals(503, events.get(1).statusCode());
+        assertTrue(events.get(1).willRetry());
+        assertEquals(HttpLogLevel.WARN, events.get(1).level());
+        assertEquals(200, events.get(3).statusCode());
+        assertEquals(HttpLogLevel.INFO, events.get(3).level());
     }
 
     @Test
@@ -81,7 +88,7 @@ class HttpLogSinkIntegrationTest {
 
         client.get("/health").executeString();
 
-        assertEquals(HttpLogLevel.DEBUG, events.get(0).level());
+        assertEquals(HttpLogLevel.DEBUG, events.get(1).level());
     }
 
     @Test
@@ -95,10 +102,10 @@ class HttpLogSinkIntegrationTest {
 
         client.post("/login").body("{\"password\":\"hunter2\"}").executeString();
 
-        assertEquals(null, events.get(0).requestHeaders());
-        assertEquals(null, events.get(0).requestBody());
-        assertEquals(null, events.get(0).responseHeaders());
-        assertEquals(null, events.get(0).responseBody());
+        assertEquals(null, events.get(0).headers());
+        assertEquals(null, events.get(0).body());
+        assertEquals(null, events.get(1).headers());
+        assertEquals(null, events.get(1).body());
     }
 
     @Test
@@ -117,9 +124,10 @@ class HttpLogSinkIntegrationTest {
             .body("{\"password\":\"hunter2\",\"name\":\"Andres\"}")
             .executeString();
 
-        HttpLogEvent event = events.get(0);
-        assertEquals("***", event.requestHeaders().get("Authorization"));
-        assertEquals("{\"password\":\"***\",\"name\":\"Andres\"}", event.requestBody());
-        assertEquals("{\"token\":\"***\"}", event.responseBody());
+        HttpLogEvent outbound = events.get(0);
+        HttpLogEvent inbound = events.get(1);
+        assertEquals("***", outbound.headers().get("Authorization"));
+        assertEquals("{\"password\":\"***\",\"name\":\"Andres\"}", outbound.body());
+        assertEquals("{\"token\":\"***\"}", inbound.body());
     }
 }

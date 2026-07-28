@@ -108,19 +108,27 @@ PlugHttpClient client = PlugHttpClient.builder()
 **Este es el punto más importante para adoptar la librería en un microservicio real.**
 
 La librería no depende de ninguna librería de logging (ni SLF4J, ni Log4j2, ni la librería
-corporativa) — pero sí define, como estándar de la empresa, **qué se loguea y cuándo**. Después
-de cada intento de request (incluyendo reintentos) arma un `HttpLogEvent` con forma fija:
+corporativa) — pero sí define, como estándar de la empresa, **qué se loguea y cuándo**. Por cada
+intento de request (incluyendo reintentos) arma **dos** `HttpLogEvent`: uno `OUTBOUND` justo
+antes de mandar el request, y uno `INBOUND` cuando llega la respuesta (o falla) de ese intento —
+cada uno con su propio momento real, en vez de un único evento combinado después de que todo
+terminó.
 
 ```java
 public record HttpLogEvent(
-    HttpLogLevel level, String eventName, String correlationId, String method, URI uri,
-    int attempt, boolean willRetry, int statusCode, long durationMillis, Throwable error
+    HttpLogLevel level, HttpLogPhase phase, String eventName, String correlationId, String method,
+    URI uri, int attempt, boolean willRetry, int statusCode, long durationMillis, Throwable error,
+    Map<String, String> headers, String body
 ) {}
 ```
 
-- `correlationId` es estable entre reintentos de un mismo llamado lógico.
+- `phase` es `OUTBOUND` o `INBOUND`. En `OUTBOUND`, `headers`/`body` son los del request; en
+  `INBOUND`, los de la respuesta. `statusCode`/`durationMillis`/`error` no se conocen todavía en
+  `OUTBOUND` (`-1`/`0`/`null`).
+- `correlationId` es estable entre ambas fases y entre reintentos de un mismo llamado lógico.
 - `eventName` siempre es `"http.client.request"` (nombre fijo para filtrar/buscar).
-- `level` lo decide un `HttpLogLevelPolicy` — por defecto: éxito (2xx) → `INFO`, 4xx → `WARN`,
+- `level` es siempre `INFO` en `OUTBOUND` (todavía no hay resultado que evaluar). En `INBOUND` lo
+  decide un `HttpLogLevelPolicy` — por defecto: éxito (2xx) → `INFO`, 4xx → `WARN`,
   5xx/timeout/error de red → `WARN` si todavía se va a reintentar, `ERROR` si ya es el intento
   final. Cada equipo puede reemplazar esta política con `.logLevelPolicy(...)` si necesita otro
   criterio.

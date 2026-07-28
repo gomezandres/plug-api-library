@@ -9,6 +9,7 @@ import com.plug.http.json.JsonCodec;
 import com.plug.http.logging.HttpLogEvent;
 import com.plug.http.logging.HttpLogLevel;
 import com.plug.http.logging.HttpLogLevelPolicy;
+import com.plug.http.logging.HttpLogPhase;
 import com.plug.http.logging.HttpLogSink;
 import com.plug.http.logging.SensitiveDataMasker;
 import com.plug.http.request.HttpRequestSpec;
@@ -139,6 +140,7 @@ public final class PlugHttpClient {
 
         byte[] requestBody = resolveRequestBody(spec);
         HttpRequest request = buildRequest(spec, uri, correlationId, requestBody);
+        emitOutboundLog(spec, uri, correlationId, attemptNumber, request, requestBody);
         long start = System.nanoTime();
 
         return jdkClient.sendAsync(request, HttpResponse.BodyHandlers.ofByteArray())
@@ -148,8 +150,8 @@ public final class PlugHttpClient {
                 recordOutcome(breaker, statusCode, error);
 
                 boolean willRetry = retryPolicy.shouldRetry(spec.method(), attemptNumber, statusCode, error);
-                emitLog(spec, uri, correlationId, attemptNumber, willRetry, statusCode, durationMillis, error,
-                    request, requestBody, response);
+                emitInboundLog(spec, uri, correlationId, attemptNumber, willRetry, statusCode, durationMillis, error,
+                    response);
 
                 if (willRetry) {
                     Duration delay = retryPolicy.backoff(attemptNumber);
@@ -168,16 +170,28 @@ public final class PlugHttpClient {
             .thenCompose(stage -> stage);
     }
 
-    private void emitLog(HttpRequestSpec spec, URI uri, String correlationId, int attempt, boolean willRetry,
-                          int statusCode, long durationMillis, Throwable error,
-                          HttpRequest request, byte[] requestBody, HttpResponse<byte[]> response) {
+    private void emitOutboundLog(HttpRequestSpec spec, URI uri, String correlationId, int attempt,
+                                  HttpRequest request, byte[] requestBody) {
+        HttpLogEvent event = new HttpLogEvent(
+            HttpLogLevel.INFO, HttpLogPhase.OUTBOUND, "http.client.request", correlationId, spec.method(), uri,
+            attempt, false, -1, 0, null,
+            logHeaders ? masker.maskHeaders(request.headers()) : null,
+            logBody ? masker.maskBody(bodyAsString(requestBody)) : null);
+        safeLog(event);
+    }
+
+    private void emitInboundLog(HttpRequestSpec spec, URI uri, String correlationId, int attempt, boolean willRetry,
+                                 int statusCode, long durationMillis, Throwable error, HttpResponse<byte[]> response) {
         HttpLogLevel level = logLevelPolicy.level(spec.method(), attempt, willRetry, statusCode, error);
         HttpLogEvent event = new HttpLogEvent(
-            level, "http.client.request", correlationId, spec.method(), uri, attempt, willRetry, statusCode, durationMillis, error,
-            logHeaders ? masker.maskHeaders(request.headers()) : null,
-            logBody ? masker.maskBody(bodyAsString(requestBody)) : null,
+            level, HttpLogPhase.INBOUND, "http.client.request", correlationId, spec.method(), uri,
+            attempt, willRetry, statusCode, durationMillis, error,
             logHeaders && response != null ? masker.maskHeaders(response.headers()) : null,
             logBody && response != null ? masker.maskBody(bodyAsString(response.body())) : null);
+        safeLog(event);
+    }
+
+    private void safeLog(HttpLogEvent event) {
         try {
             logSink.log(event);
         } catch (RuntimeException ignored) {
@@ -351,13 +365,13 @@ public final class PlugHttpClient {
             return this;
         }
 
-        /** Off by default. When on, {@link HttpLogEvent#requestHeaders()}/{@code responseHeaders()} are populated, redacted via the configured {@link SensitiveDataMasker}. */
+        /** Off by default. When on, {@link HttpLogEvent#headers()} is populated on both the outbound and inbound events, redacted via the configured {@link SensitiveDataMasker}. */
         public Builder logHeaders(boolean logHeaders) {
             this.logHeaders = logHeaders;
             return this;
         }
 
-        /** Off by default. When on, {@link HttpLogEvent#requestBody()}/{@code responseBody()} are populated, redacted via the configured {@link SensitiveDataMasker}. */
+        /** Off by default. When on, {@link HttpLogEvent#body()} is populated on both the outbound and inbound events, redacted via the configured {@link SensitiveDataMasker}. */
         public Builder logBody(boolean logBody) {
             this.logBody = logBody;
             return this;
